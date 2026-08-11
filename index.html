@@ -23,15 +23,18 @@
 
   #video{
     position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
-    transform:scaleX(-1); opacity:0.16; z-index:0; filter:saturate(0.6) contrast(1.1) brightness(0.7);
+    transform:scaleX(-1); opacity:0.09; z-index:0; filter:saturate(0.4) contrast(1.05) brightness(0.45) blur(2px);
+    -webkit-mask-image: radial-gradient(ellipse 68% 62% at center, transparent 15%, rgba(0,0,0,0.6) 52%, rgba(0,0,0,0.97) 100%);
+    mask-image: radial-gradient(ellipse 68% 62% at center, transparent 15%, rgba(0,0,0,0.6) 52%, rgba(0,0,0,0.97) 100%);
+    transition: opacity .6s ease;
   }
-  #video.live{ opacity:0.22; }
+  #video.live{ opacity:0.13; }
 
   #skeleton{ position:absolute; inset:0; width:100%; height:100%; z-index:2; pointer-events:none; transform:scaleX(-1); }
 
   .vignette{ position:fixed; inset:0; z-index:3; pointer-events:none;
     background:
-      radial-gradient(ellipse at center, transparent 45%, rgba(3,4,8,0.55) 100%),
+      radial-gradient(ellipse at center, transparent 38%, rgba(3,4,8,0.72) 100%),
       repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
   }
   .noise{ position:fixed; inset:0; z-index:3; pointer-events:none; opacity:0.05; mix-blend-mode:overlay;
@@ -50,7 +53,7 @@
   .title-mark .t1 span{ color:var(--cyan); }
   .title-mark .t2{ font-size:10px; color:var(--muted); letter-spacing:0.2em; text-transform:uppercase; }
 
-  .panel{ border:1px solid rgba(0,229,255,0.25); background:rgba(4,8,16,0.55); backdrop-filter:blur(14px); border-radius:14px; }
+  .panel{ border:1px solid rgba(0,229,255,0.25); background:rgba(4,8,16,0.7); backdrop-filter:blur(16px); border-radius:14px; }
 
   .panel-corner{ position:relative; }
   .panel-corner::before, .panel-corner::after{ content:''; position:absolute; width:14px; height:14px; border:2px solid var(--cyan); opacity:0.7; }
@@ -92,7 +95,7 @@
 
   /* reticle following fingertip(s) — one per hand */
   .reticle{ position:fixed; z-index:11; width:64px; height:64px; top:0; left:0; transform:translate(-100px,-100px); pointer-events:none;
-    opacity:0; transition:opacity .25s; }
+    opacity:0; transition:opacity .25s, transform .08s linear; }
   .reticle.active{ opacity:1; }
   .reticle svg{ width:100%; height:100%; filter:drop-shadow(0 0 6px rgba(0,229,255,0.7)); }
   .reticle.secondary svg{ filter:drop-shadow(0 0 6px rgba(255,107,53,0.7)); }
@@ -134,7 +137,7 @@
   /* ===== 3D photo gallery — caption for the currently opened photo ===== */
   #photoCaption{ position:fixed; z-index:45; left:50%; bottom:96px; transform:translate(-50%,10px); text-align:center;
     padding:12px 26px; opacity:0; visibility:hidden; pointer-events:none;
-    transition:opacity .4s cubic-bezier(.2,.8,.2,1), transform .4s cubic-bezier(.2,.8,.2,1), visibility .4s; }
+    transition:opacity .45s cubic-bezier(.16,1,.3,1), transform .45s cubic-bezier(.16,1,.3,1), visibility .45s; }
   #photoCaption.show{ opacity:1; visibility:visible; transform:translate(-50%,0); }
   .pc-name{ font-family:'Syne',sans-serif; font-weight:800; font-size:18px; letter-spacing:0.01em; }
   .pc-name span{ color:var(--cyan); }
@@ -143,10 +146,10 @@
   .pc-hint i{ color:var(--orange); margin-right:4px; }
 
   /* ===== gallery hint chip shown while archive is scattered open ===== */
-  #galleryHint{ position:fixed; z-index:45; left:50%; top:88px; transform:translateX(-50%); text-align:center;
+  #galleryHint{ position:fixed; z-index:45; left:50%; top:88px; transform:translate(-50%,-6px); text-align:center;
     padding:9px 20px; font-size:10.5px; color:var(--muted); letter-spacing:0.04em; opacity:0; visibility:hidden;
-    transition:opacity .4s, visibility .4s; }
-  #galleryHint.show{ opacity:1; visibility:visible; }
+    transition:opacity .45s cubic-bezier(.16,1,.3,1), transform .45s cubic-bezier(.16,1,.3,1), visibility .45s; }
+  #galleryHint.show{ opacity:1; visibility:visible; transform:translate(-50%,0); }
   #galleryHint i{ color:var(--orange); margin-right:5px; }
 
   /* interaction status chip inside gesture panel */
@@ -350,6 +353,14 @@
     </div>
 
     <div class="help-tip"><i class="fa-solid fa-lightbulb"></i>Pastikan pencahayaan cukup dan kedua tangan berada penuh di dalam bidang pandang kamera untuk hasil deteksi terbaik. Semua pemrosesan berjalan lokal di perangkatmu. Tombol "Buka Arsip Foto" dan klik langsung pada foto juga tersedia sebagai alternatif tanpa gestur.</div>
+
+    <div class="help-item">
+      <div class="help-icon"><i class="fa-solid fa-arrows-up-down-left-right"></i></div>
+      <div>
+        <div class="help-item-title">Tanpa Kamera — Seret Langsung</div>
+        <div class="help-item-desc">Tidak mau pakai kamera? Seret (drag) dengan mouse atau jari di layar sentuh untuk memutar bola inti dan galeri foto secara bebas di ruang 3D — persis seperti gestur tangan, arah geraknya sama. Scroll / cubit dua jari di trackpad untuk memperbesar-kecilkan tampilan.</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -361,7 +372,7 @@
   <button class="gate-btn" id="activateBtn"><i class="fa-solid fa-power-off"></i> Nyalakan Kamera</button>
   <div class="boot-log mono" id="bootLog"></div>
   <div class="gate-error" id="gateError"></div>
-  <div class="gate-note">Butuh izin kamera. Tunjuk dengan telunjuk untuk mengarahkan kursor, cubit untuk menahan/memilih, lalu kepalkan tangan satunya sekali saja untuk membuka arsip foto — dan sekali lagi untuk membuka salah satu foto secara penuh di ruang 3D.</div>
+  <div class="gate-note">Butuh izin kamera. Tunjuk dengan telunjuk untuk mengarahkan kursor, cubit untuk menahan/memilih, lalu kepalkan tangan satunya sekali saja untuk membuka arsip foto — dan sekali lagi untuk membuka salah satu foto secara penuh di ruang 3D. Tanpa kamera pun bisa: seret (drag) dengan mouse atau jari di layar untuk memutar bola inti dan galeri foto — scroll untuk memperbesar/mengecilkan.</div>
 </div>
 
 <!-- MediaPipe Hands (global scripts, stabil untuk static hosting) -->
@@ -687,6 +698,48 @@ const handState = {
 };
 
 /* ---------------------------------------------------------
+   UNIFIED DRAG-TO-ROTATE
+   Mouse drag, touch drag, and the tracked fingertip all push
+   relative deltas into the same accumulator — so the scene can
+   always be grabbed and spun, with or without a camera.
+---------------------------------------------------------- */
+let manualRotY = 0, manualRotX = 0;
+function applyDragDelta(ndx, ndy){
+  manualRotY += ndx * 2.6;
+  manualRotX = THREE.MathUtils.clamp(manualRotX - ndy * 1.7, -1.15, 1.15);
+  handState.targetRotY = manualRotY;
+  handState.targetRotX = manualRotX;
+}
+let fingerDragActive = false, fingerLastNX = 0.5, fingerLastNY = 0.5;
+
+const dragEl = renderer.domElement;
+dragEl.style.touchAction = 'none';
+dragEl.style.cursor = 'grab';
+let pDragging = false, pDragMoved = false, pLastX = 0, pLastY = 0;
+dragEl.addEventListener('pointerdown', (e) => {
+  pDragging = true; pDragMoved = false;
+  pLastX = e.clientX; pLastY = e.clientY;
+  dragEl.setPointerCapture(e.pointerId);
+  dragEl.style.cursor = 'grabbing';
+});
+dragEl.addEventListener('pointermove', (e) => {
+  if (!pDragging) return;
+  const dx = e.clientX - pLastX, dy = e.clientY - pLastY;
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) pDragMoved = true;
+  pLastX = e.clientX; pLastY = e.clientY;
+  applyDragDelta(dx / window.innerWidth, dy / window.innerHeight);
+});
+window.addEventListener('pointerup', () => {
+  if (!pDragging) return;
+  pDragging = false;
+  dragEl.style.cursor = 'grab';
+});
+dragEl.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  camera3.position.z = THREE.MathUtils.clamp(camera3.position.z + e.deltaY * 0.0035, 5.5, 13);
+}, { passive: false });
+
+/* ---------------------------------------------------------
    GALLERY STATE MACHINE
    closed -> (hover core + pinch)         -> held
    held   -> (other hand fist x1)         -> open   (photos scatter in 3D)
@@ -760,6 +813,7 @@ document.getElementById('teamBtn').addEventListener('click', () => {
 });
 // klik langsung pada foto (fallback tanpa gestur) — hanya aktif saat arsip terbuka
 renderer.domElement.addEventListener('click', (ev) => {
+  if (pDragMoved) return;
   if (folderState !== 'open') return;
   const ndc = new THREE.Vector2((ev.clientX / window.innerWidth) * 2 - 1, -(ev.clientY / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera3);
@@ -773,6 +827,19 @@ let frames = 0, fpsAcc = 0;
 const _tmpVec = new THREE.Vector3();
 const _tmpBob = new THREE.Vector3();
 
+// frame-rate independent exponential smoothing — makes every motion feel identically
+// silky whether the browser renders at 30fps or 144fps (unlike a fixed lerp factor,
+// which visibly stutters whenever MediaPipe's hand-tracking pass eats a frame budget)
+function damp(current, target, lambda, dt){
+  return target + (current - target) * Math.exp(-lambda * dt);
+}
+function dampVec3(vec, target, lambda, dt){
+  vec.x = damp(vec.x, target.x, lambda, dt);
+  vec.y = damp(vec.y, target.y, lambda, dt);
+  vec.z = damp(vec.z, target.z, lambda, dt);
+  return vec;
+}
+
 function animate3D() {
   requestAnimationFrame(animate3D);
   const t = clock.getElapsedTime();
@@ -782,9 +849,9 @@ function animate3D() {
   frames++; fpsAcc += dt;
   if (fpsAcc >= 0.5) { stFps.textContent = Math.round(frames / fpsAcc); frames = 0; fpsAcc = 0; }
 
-  // smooth rotation toward hand target
-  handState.curRotX += (handState.targetRotX - handState.curRotX) * 0.08;
-  handState.curRotY += (handState.targetRotY - handState.curRotY) * 0.08;
+  // smooth rotation toward hand target — dt-damped, not a fixed factor, so it never stutters
+  handState.curRotX = damp(handState.curRotX, handState.targetRotX, 10, dt);
+  handState.curRotY = damp(handState.curRotY, handState.targetRotY, 10, dt);
 
   coreGroup.rotation.y = t * 0.15 + handState.curRotY;
   coreGroup.rotation.x = handState.curRotX;
@@ -811,8 +878,8 @@ function animate3D() {
     targetScale = baseCoreScale * mult;
     coreTargetPos.copy(CLOSED_POS);
   }
-  coreGroup.scale.setScalar(THREE.MathUtils.lerp(coreGroup.scale.x, targetScale, 0.1));
-  coreGroup.position.lerp(coreTargetPos, 0.08);
+  coreGroup.scale.setScalar(damp(coreGroup.scale.x, targetScale, 9, dt));
+  dampVec3(coreGroup.position, coreTargetPos, 8, dt);
 
   const hot = folderState === 'held' || folderState === 'open' || folderState === 'photo' || (handState.gesture === 'PINCH' && folderHovered);
   innerMat.emissiveIntensity = 0.9 + Math.sin(t * 3) * 0.15 + handState.energy * 1.2 + (folderHovered && folderState==='closed' ? 0.3 : 0);
@@ -839,12 +906,12 @@ function animate3D() {
   // camera drifts slightly with hand x/y for parallax depth
   const px = (handState.x - 0.5) * 2;
   const py = (handState.y - 0.5) * -2;
-  camera3.position.x += ((px * 1.6) - camera3.position.x) * 0.04;
-  camera3.position.y += ((py * 1.2) - camera3.position.y) * 0.04;
+  camera3.position.x = damp(camera3.position.x, px * 1.6, 5, dt);
+  camera3.position.y = damp(camera3.position.y, py * 1.2, 5, dt);
   camera3.lookAt(0, 0, 0);
 
   // energy decay toward baseline, HUD sync readout
-  handState.energy += ((handState.present ? 0.55 : 0.12) - handState.energy) * 0.05;
+  handState.energy = damp(handState.energy, handState.present ? 0.55 : 0.12, 6, dt);
   stSync.textContent = (handState.energy * 100).toFixed(1) + '%';
 
   // ---- 3D photo gallery: true orbital motion — unselected photos always
@@ -877,11 +944,11 @@ function animate3D() {
       }
     }
 
-    sp.position.lerp(pos, isSelected ? 0.14 : 0.09);
+    dampVec3(sp.position, pos, isSelected ? 11 : 7, dt);
     const curScaleY = sp.scale.y || 0.0001;
-    const newScaleY = THREE.MathUtils.lerp(curScaleY, scaleY, 0.12);
+    const newScaleY = damp(curScaleY, scaleY, 9, dt);
     sp.scale.set(newScaleY * ud.aspect, newScaleY, 1);
-    sp.material.opacity = THREE.MathUtils.lerp(sp.material.opacity, opacity, 0.12);
+    sp.material.opacity = damp(sp.material.opacity, opacity, 9, dt);
   });
 
   renderer.render(scene, camera3);
@@ -917,6 +984,8 @@ const FINGER_LINKS = [
   [13,17],[17,18],[18,19],[19,20],
   [0,17]
 ];
+// thumb, index, middle, ring, pinky tips — every finger gets tracked & highlighted, not just the index
+const FINGERTIPS = [4, 8, 12, 16, 20];
 
 function dist3(a, b){
   return Math.hypot(a.x-b.x, a.y-b.y, (a.z||0)-(b.z||0));
@@ -989,6 +1058,7 @@ function onResults(results){
     handState.twoHandActive = false;
     handState.zoomMode = false;
     folderHovered = false;
+    fingerDragActive = false;
     if (folderState === 'held') folderState = 'closed';
     if (lastGesture !== 'NONE'){ pushLog('Tangan hilang dari bidang pandang'); lastGesture = 'NONE'; }
     gestureName.textContent = gestureLabels.NONE.name;
@@ -1012,11 +1082,12 @@ function onResults(results){
       skeletonCtx.stroke();
     });
     lm.forEach((p, i) => {
+      const isTip = FINGERTIPS.includes(i);
       skeletonCtx.beginPath();
-      skeletonCtx.arc(p.x*w, p.y*h, i===8 ? 5 : 3, 0, Math.PI*2);
+      skeletonCtx.arc(p.x*w, p.y*h, i===8 ? 5 : (isTip ? 4 : 3), 0, Math.PI*2);
       skeletonCtx.fillStyle = idx === 0
-        ? (i===8 ? '#ff6b35' : 'rgba(0,229,255,0.85)')
-        : (i===8 ? '#00e5ff' : 'rgba(255,107,53,0.85)');
+        ? (i===8 ? '#ff6b35' : (isTip ? 'rgba(0,229,255,0.95)' : 'rgba(0,229,255,0.85)'))
+        : (i===8 ? '#00e5ff' : (isTip ? 'rgba(255,107,53,0.95)' : 'rgba(255,107,53,0.85)'));
       skeletonCtx.fill();
     });
 
@@ -1046,8 +1117,14 @@ function onResults(results){
     if (idx === 0){
       handState.x = 1 - tip.x;
       handState.y = tip.y;
-      handState.targetRotY = (handState.x - 0.5) * 2.2;
-      handState.targetRotX = (handState.y - 0.5) * -1.4;
+      // finger acts as a drag input too — same relative-motion channel as the mouse,
+      // so grabbing the scene feels identical whether you use your hand or a cursor
+      if (fingerDragActive){
+        applyDragDelta(handState.x - fingerLastNX, handState.y - fingerLastNY);
+      }
+      fingerLastNX = handState.x;
+      fingerLastNY = handState.y;
+      fingerDragActive = true;
     }
   });
 
