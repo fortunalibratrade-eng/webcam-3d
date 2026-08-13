@@ -10,7 +10,8 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
   :root{
-    --bg:#030408; --cyan:#00e5ff; --orange:#ff6b35; --fg:#f5f5f7; --muted:#8a8fa3;
+    --bg:#020306; --cyan:#00e5ff; --cyan-soft:#5be6ff; --orange:#ff6b35; --fg:#f5f5f7; --muted:#8a8fa3;
+    --glass:rgba(6,11,20,0.5); --glass-strong:rgba(6,11,20,0.72); --ease:cubic-bezier(.19,1,.22,1);
   }
   *{ box-sizing:border-box; -webkit-font-smoothing:antialiased; }
   html,body{ margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--fg); font-family:'Space Grotesk',sans-serif; }
@@ -18,62 +19,100 @@
   .mono{ font-variant-numeric:tabular-nums; font-family:'Space Grotesk',monospace; letter-spacing:0.02em; }
 
   /* ===== layered stage ===== */
-  #stage{ position:fixed; inset:0; }
+  #stage{ position:fixed; inset:0; background:radial-gradient(ellipse 90% 70% at 50% 38%, #0a1220 0%, #05070d 55%, #020306 100%); }
   #three-canvas{ position:absolute; inset:0; z-index:1; }
 
+  /* raw webcam feed is pushed far back: very low opacity, heavily blurred/darkened so it
+     can never wash out or "block" the HUD / core / photo cards sitting above it */
   #video{
     position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
-    transform:scaleX(-1); opacity:0.09; z-index:0; filter:saturate(0.4) contrast(1.05) brightness(0.45) blur(2px);
-    -webkit-mask-image: radial-gradient(ellipse 68% 62% at center, transparent 15%, rgba(0,0,0,0.6) 52%, rgba(0,0,0,0.97) 100%);
-    mask-image: radial-gradient(ellipse 68% 62% at center, transparent 15%, rgba(0,0,0,0.6) 52%, rgba(0,0,0,0.97) 100%);
-    transition: opacity .6s ease;
+    transform:scaleX(-1); opacity:0.09; z-index:0; filter:saturate(0.35) contrast(0.95) brightness(0.45) blur(6px);
+    transition:opacity .8s var(--ease);
   }
   #video.live{ opacity:0.13; }
 
-  #skeleton{ position:absolute; inset:0; width:100%; height:100%; z-index:2; pointer-events:none; transform:scaleX(-1); }
+  /* soft dark scrim that always sits between the webcam layer and the 3D/HUD layer,
+     concentrated where content actually lives so the feed reads as ambience only */
+  #camScrim{ position:fixed; inset:0; z-index:1; pointer-events:none;
+    background:
+      radial-gradient(ellipse 70% 55% at 50% 44%, rgba(2,3,6,0.72) 0%, rgba(2,3,6,0.35) 55%, transparent 78%),
+      linear-gradient(180deg, rgba(2,3,6,0.55) 0%, rgba(2,3,6,0.05) 22%, rgba(2,3,6,0.05) 78%, rgba(2,3,6,0.6) 100%);
+  }
+
+  #skeleton{ position:fixed; inset:0; width:100%; height:100%; z-index:2; pointer-events:none; transform:scaleX(-1); }
 
   .vignette{ position:fixed; inset:0; z-index:3; pointer-events:none;
     background:
-      radial-gradient(ellipse at center, transparent 38%, rgba(3,4,8,0.72) 100%),
-      repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
+      radial-gradient(ellipse at center, transparent 40%, rgba(2,3,6,0.68) 100%),
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
   }
-  .noise{ position:fixed; inset:0; z-index:3; pointer-events:none; opacity:0.05; mix-blend-mode:overlay;
+  .noise{ position:fixed; inset:0; z-index:3; pointer-events:none; opacity:0.04; mix-blend-mode:overlay;
     background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  /* holographic sweep — garis pindai tipis yang naik-turun perlahan, khas HUD sci-fi ala JARVIS */
+  .hud-sweep{ position:fixed; inset:0; z-index:4; pointer-events:none; overflow:hidden; }
+  .hud-sweep::before{ content:''; position:absolute; left:0; right:0; height:140px;
+    background:linear-gradient(180deg, transparent 0%, rgba(64,220,255,0.05) 45%, rgba(64,220,255,0.09) 50%, rgba(64,220,255,0.05) 55%, transparent 100%);
+    animation:hudSweep 7s ease-in-out infinite; }
+  @keyframes hudSweep{ 0%{ transform:translateY(-160px); opacity:0; } 8%{ opacity:1; } 50%{ transform:translateY(100vh); opacity:1; } 58%{ opacity:0; } 100%{ transform:translateY(100vh); opacity:0; } }
+  .hud.panel{ position:relative; }
+  .hud.panel::after{ content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+    box-shadow:0 0 0 1px rgba(64,220,255,0.05), 0 0 18px -6px rgba(64,220,255,0.35) inset; }
 
-  /* ===== HUD chrome ===== */
-  .hud{ position:fixed; z-index:10; pointer-events:none; }
-  .hud * { pointer-events:auto; }
+  /* ===== HUD chrome — one fixed grid container holds every corner element,
+     so nothing can ever drift, overlap, or stack on top of something else
+     regardless of viewport size. Children are plain grid items (no separate
+     position:fixed math per panel = no way for them to disagree). ===== */
+  #hudGrid{ position:fixed; inset:0; z-index:10; pointer-events:none;
+    display:grid; padding:20px; gap:14px;
+    grid-template-columns:minmax(0,auto) 1fr minmax(0,auto);
+    grid-template-rows:auto auto 1fr auto;
+    grid-template-areas:
+      "topbar   topbar   topbar"
+      "row2left .        row2right"
+      ".        .        ."
+      "botleft  botcenter botright";
+  }
+  #hudGrid > * { pointer-events:auto; min-width:0; }
+  .hud{ animation:hudIn .9s var(--ease) both; }
+  @keyframes hudIn{ from{ opacity:0; transform:translateY(10px) scale(.98); filter:blur(4px); } to{ opacity:1; transform:none; filter:blur(0); } }
+  .topbar{ animation-delay:.05s; } .status-panel{ animation-delay:.15s; } .cam-eye{ animation-delay:.2s; }
+  .gesture-panel{ animation-delay:.25s; } .log-panel{ animation-delay:.3s; } .fab-row{ animation-delay:.35s; }
 
-  .topbar{ top:0; left:0; right:0; display:flex; align-items:center; justify-content:space-between; padding:18px 20px; }
+  .topbar{ grid-area:topbar; display:flex; align-items:center; justify-content:space-between; }
   .backlink{ display:flex; align-items:center; gap:10px; text-decoration:none; color:var(--fg); font-size:12px; letter-spacing:0.14em; text-transform:uppercase;
-    padding:9px 16px; border:1px solid rgba(0,229,255,0.3); border-radius:100px; background:rgba(0,229,255,0.05); backdrop-filter:blur(10px); transition:all .3s; }
-  .backlink:hover{ border-color:var(--cyan); background:rgba(0,229,255,0.12); }
+    padding:9px 16px; border:1px solid rgba(0,229,255,0.3); border-radius:100px; background:rgba(0,229,255,0.05); backdrop-filter:blur(10px); transition:all .3s var(--ease); }
+  .backlink:hover{ border-color:var(--cyan); background:rgba(0,229,255,0.14); transform:translateY(-1px); box-shadow:0 6px 20px -6px rgba(0,229,255,0.35); }
+  .backlink:active{ transform:translateY(0); }
   .title-mark{ text-align:right; }
   .title-mark .t1{ font-family:'Syne',sans-serif; font-weight:800; font-size:18px; letter-spacing:0.06em; }
   .title-mark .t1 span{ color:var(--cyan); }
   .title-mark .t2{ font-size:10px; color:var(--muted); letter-spacing:0.2em; text-transform:uppercase; }
 
-  .panel{ border:1px solid rgba(0,229,255,0.25); background:rgba(4,8,16,0.7); backdrop-filter:blur(16px); border-radius:14px; }
+  .panel{ border:1px solid rgba(0,229,255,0.22); background:linear-gradient(165deg, rgba(9,16,28,0.68), rgba(4,7,14,0.62));
+    backdrop-filter:blur(20px) saturate(1.3); -webkit-backdrop-filter:blur(20px) saturate(1.3); border-radius:16px;
+    box-shadow:0 10px 40px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,229,255,0.04) inset, 0 1px 0 0 rgba(255,255,255,0.05) inset;
+    transition:border-color .35s var(--ease), box-shadow .35s var(--ease), transform .35s var(--ease); }
 
   .panel-corner{ position:relative; }
-  .panel-corner::before, .panel-corner::after{ content:''; position:absolute; width:14px; height:14px; border:2px solid var(--cyan); opacity:0.7; }
-  .panel-corner::before{ top:-1px; left:-1px; border-right:none; border-bottom:none; }
-  .panel-corner::after{ bottom:-1px; right:-1px; border-left:none; border-top:none; }
+  .panel-corner::before, .panel-corner::after{ content:''; position:absolute; width:14px; height:14px; border:2px solid var(--cyan); opacity:0.75;
+    filter:drop-shadow(0 0 4px rgba(0,229,255,0.6)); }
+  .panel-corner::before{ top:-1px; left:-1px; border-right:none; border-bottom:none; border-top-left-radius:6px; }
+  .panel-corner::after{ bottom:-1px; right:-1px; border-left:none; border-top:none; border-bottom-right-radius:6px; }
 
   /* status panel — top left */
-  .status-panel{ top:80px; left:20px; width:220px; padding:14px 16px; font-size:11px; }
+  .status-panel{ grid-area:row2left; align-self:start; width:220px; padding:14px 16px; font-size:11px; }
   .status-row{ display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06); }
   .status-row:last-child{ border-bottom:none; }
   .status-label{ color:var(--muted); letter-spacing:0.08em; text-transform:uppercase; font-size:9.5px; }
   .status-value{ color:var(--cyan); font-weight:600; }
   .status-value.warn{ color:var(--orange); }
   .status-value.off{ color:var(--muted); }
-  .dot{ display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px; background:var(--muted); }
-  .dot.on{ background:var(--cyan); box-shadow:0 0 8px var(--cyan); animation:blink 1.6s ease-in-out infinite; }
-  @keyframes blink{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+  .dot{ display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px; background:var(--muted); transition:background .3s, box-shadow .3s; }
+  .dot.on{ background:var(--cyan); box-shadow:0 0 10px var(--cyan), 0 0 2px var(--cyan); animation:blink 1.6s ease-in-out infinite; }
+  @keyframes blink{ 0%,100%{opacity:1;} 50%{opacity:0.4;} }
 
   /* camera preview — top right, small circular HUD eye */
-  .cam-eye{ top:80px; right:20px; width:150px; height:150px; border-radius:50%; overflow:hidden; position:fixed; z-index:10;
+  .cam-eye{ grid-area:row2right; align-self:start; justify-self:end; width:150px; height:150px; border-radius:50%; overflow:hidden;
     border:1px solid rgba(0,229,255,0.35); box-shadow:0 0 0 1px rgba(0,229,255,0.08), 0 0 30px rgba(0,229,255,0.12) inset; }
   .cam-eye video{ width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
   .cam-eye .ring{ position:absolute; inset:6px; border-radius:50%; border:1px dashed rgba(0,229,255,0.4); animation:spin 14s linear infinite; }
@@ -81,21 +120,22 @@
   .cam-eye .label{ position:absolute; bottom:6px; left:0; right:0; text-align:center; font-size:8px; letter-spacing:0.16em; color:var(--cyan); text-transform:uppercase; text-shadow:0 0 6px rgba(0,229,255,0.6); }
 
   /* gesture readout — bottom left */
-  .gesture-panel{ left:20px; bottom:20px; padding:14px 18px; min-width:200px; }
-  .gesture-name{ font-family:'Syne',sans-serif; font-weight:800; font-size:22px; letter-spacing:0.02em; color:var(--fg); }
-  .gesture-sub{ font-size:10px; color:var(--muted); letter-spacing:0.14em; text-transform:uppercase; margin-top:2px; }
+  .gesture-panel{ grid-area:botleft; align-self:end; padding:14px 18px; min-width:200px; max-width:min(340px, 34vw); }
+  .gesture-name{ font-family:'Syne',sans-serif; font-weight:800; font-size:22px; letter-spacing:0.02em; color:var(--fg);
+    text-shadow:0 0 18px rgba(0,229,255,0.25); transition:text-shadow .3s; }
+  .gesture-sub{ font-size:10px; color:var(--muted); letter-spacing:0.14em; text-transform:uppercase; margin-top:2px; transition:color .2s; }
   .gesture-bar{ margin-top:10px; height:3px; background:rgba(255,255,255,0.08); border-radius:2px; overflow:hidden; }
-  .gesture-bar-fill{ height:100%; width:0%; background:linear-gradient(90deg,var(--cyan),var(--orange)); transition:width .15s ease-out; }
+  .gesture-bar-fill{ height:100%; width:0%; background:linear-gradient(90deg,var(--cyan),var(--orange)); transition:width .18s var(--ease); box-shadow:0 0 8px rgba(0,229,255,0.5); }
 
   /* console log — bottom right */
-  .log-panel{ right:20px; bottom:20px; width:260px; max-height:150px; padding:12px 16px; font-size:10.5px; color:var(--muted); overflow:hidden; }
+  .log-panel{ grid-area:botright; align-self:end; justify-self:end; width:260px; max-height:150px; padding:12px 16px; font-size:10.5px; color:var(--muted); overflow:hidden; }
   .log-panel .log-title{ font-size:9px; letter-spacing:0.16em; text-transform:uppercase; color:var(--cyan); margin-bottom:6px; }
   .log-line{ opacity:0; animation:logIn .4s forwards; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   @keyframes logIn{ from{ opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
 
   /* reticle following fingertip(s) — one per hand */
   .reticle{ position:fixed; z-index:11; width:64px; height:64px; top:0; left:0; transform:translate(-100px,-100px); pointer-events:none;
-    opacity:0; transition:opacity .25s, transform .08s linear; }
+    opacity:0; transition:opacity .25s; }
   .reticle.active{ opacity:1; }
   .reticle svg{ width:100%; height:100%; filter:drop-shadow(0 0 6px rgba(0,229,255,0.7)); }
   .reticle.secondary svg{ filter:drop-shadow(0 0 6px rgba(255,107,53,0.7)); }
@@ -126,18 +166,19 @@
   .boot-log{ font-size:10.5px; color:var(--cyan); opacity:0.65; height:16px; min-width:260px; }
 
   /* ===== help/team FAB row + modals ===== */
-  .fab-row{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:55; display:flex; gap:10px; }
+  .fab-row{ grid-area:botcenter; align-self:end; justify-self:center; display:flex; gap:10px; z-index:55; position:relative; }
   .help-fab{ display:flex; align-items:center; gap:8px; padding:11px 22px; border-radius:100px;
     border:1px solid rgba(0,229,255,0.35); background:rgba(4,8,16,0.72); backdrop-filter:blur(14px);
     color:var(--fg); font-family:'Space Grotesk',sans-serif; font-size:11px; letter-spacing:0.1em;
     text-transform:uppercase; cursor:pointer; transition:all .3s; box-shadow:0 4px 20px rgba(0,0,0,0.35); }
   .help-fab i{ color:var(--cyan); font-size:14px; }
-  .help-fab:hover{ border-color:var(--cyan); background:rgba(0,229,255,0.1); box-shadow:0 0 24px rgba(0,229,255,0.25); }
+  .help-fab:hover{ border-color:var(--cyan); background:rgba(0,229,255,0.12); box-shadow:0 0 26px rgba(0,229,255,0.28); transform:translateY(-2px); }
+  .help-fab:active{ transform:translateY(0) scale(0.98); }
 
   /* ===== 3D photo gallery — caption for the currently opened photo ===== */
   #photoCaption{ position:fixed; z-index:45; left:50%; bottom:96px; transform:translate(-50%,10px); text-align:center;
     padding:12px 26px; opacity:0; visibility:hidden; pointer-events:none;
-    transition:opacity .45s cubic-bezier(.16,1,.3,1), transform .45s cubic-bezier(.16,1,.3,1), visibility .45s; }
+    transition:opacity .4s cubic-bezier(.2,.8,.2,1), transform .4s cubic-bezier(.2,.8,.2,1), visibility .4s; }
   #photoCaption.show{ opacity:1; visibility:visible; transform:translate(-50%,0); }
   .pc-name{ font-family:'Syne',sans-serif; font-weight:800; font-size:18px; letter-spacing:0.01em; }
   .pc-name span{ color:var(--cyan); }
@@ -146,10 +187,10 @@
   .pc-hint i{ color:var(--orange); margin-right:4px; }
 
   /* ===== gallery hint chip shown while archive is scattered open ===== */
-  #galleryHint{ position:fixed; z-index:45; left:50%; top:88px; transform:translate(-50%,-6px); text-align:center;
-    padding:9px 20px; font-size:10.5px; color:var(--muted); letter-spacing:0.04em; opacity:0; visibility:hidden;
-    transition:opacity .45s cubic-bezier(.16,1,.3,1), transform .45s cubic-bezier(.16,1,.3,1), visibility .45s; }
-  #galleryHint.show{ opacity:1; visibility:visible; transform:translate(-50%,0); }
+  #galleryHint{ position:fixed; z-index:20; left:50%; top:132px; transform:translateX(-50%); text-align:center;
+    padding:9px 22px; font-size:10.5px; color:var(--muted); letter-spacing:0.04em; opacity:0; visibility:hidden;
+    max-width:min(520px, 60vw); transition:opacity .4s var(--ease), visibility .4s, transform .4s var(--ease); }
+  #galleryHint.show{ opacity:1; visibility:visible; }
   #galleryHint i{ color:var(--orange); margin-right:5px; }
 
   /* interaction status chip inside gesture panel */
@@ -189,16 +230,16 @@
   .help-tip i{ color:var(--orange); margin-right:5px; }
 
   @media (max-width:640px){
-    .status-panel{ width:170px; font-size:10px; top:76px; }
-    .cam-eye{ width:100px; height:100px; top:76px; }
+    #hudGrid{ padding:14px; gap:10px; }
+    .status-panel{ width:170px; font-size:10px; }
+    .cam-eye{ width:100px; height:100px; }
     .log-panel{ display:none; }
-    .gesture-panel{ min-width:160px; padding:10px 14px; }
+    .gesture-panel{ min-width:160px; padding:10px 14px; max-width:60vw; }
     .gesture-name{ font-size:17px; }
-    .fab-row{ bottom:16px; gap:8px; }
     .help-fab{ padding:9px 14px; font-size:10px; }
     .help-fab span{ display:none; }
     #photoCaption{ bottom:84px; padding:10px 18px; }
-    #galleryHint{ top:80px; font-size:9.5px; padding:7px 14px; }
+    #galleryHint{ top:96px; font-size:9.5px; padding:7px 14px; max-width:82vw; }
   }
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{ animation-duration:.01ms !important; transition-duration:.01ms !important; }
@@ -209,46 +250,59 @@
 
 <div id="stage">
   <video id="video" playsinline muted></video>
-  <canvas id="skeleton"></canvas>
   <canvas id="three-canvas"></canvas>
 </div>
+<div id="camScrim"></div>
+<canvas id="skeleton"></canvas>
 <div class="vignette"></div>
+<div class="hud-sweep"></div>
 <div class="noise"></div>
 
 <!-- HUD -->
-<div class="hud topbar">
-  <a class="backlink" href="index.html"><i class="fa-solid fa-arrow-left"></i> Kembali ke Tim</a>
-  <div class="title-mark">
-    <div class="t1">IREMOS <span>KAI</span> NIKI</div>
-    <div class="t2">KKL Kuala Secapah 1 · Core Interface</div>
+<div id="hudGrid">
+  <div class="hud topbar">
+    <a class="backlink" href="index.html"><i class="fa-solid fa-arrow-left"></i> Kembali ke Tim</a>
+    <div class="title-mark">
+      <div class="t1">IREMOS <span>KAI</span> NIKI</div>
+      <div class="t2">KKL Kuala Secapah 1 · Core Interface</div>
+    </div>
   </div>
-</div>
 
-<div class="hud panel panel-corner status-panel">
-  <div class="status-row"><span class="status-label"><span class="dot" id="dotSys"></span>Sistem</span><span class="status-value" id="stSys">Standby</span></div>
-  <div class="status-row"><span class="status-label"><span class="dot" id="dotCam"></span>Kamera</span><span class="status-value off" id="stCam">Tidak aktif</span></div>
-  <div class="status-row"><span class="status-label"><span class="dot" id="dotHand"></span>Tangan</span><span class="status-value off" id="stHand">Tidak terdeteksi</span></div>
-  <div class="status-row"><span class="status-label">FPS</span><span class="status-value mono" id="stFps">0</span></div>
-  <div class="status-row"><span class="status-label">Sinkron Core</span><span class="status-value mono" id="stSync">0.0%</span></div>
-</div>
+  <div class="hud panel panel-corner status-panel">
+    <div class="status-row"><span class="status-label"><span class="dot" id="dotSys"></span>Sistem</span><span class="status-value" id="stSys">Standby</span></div>
+    <div class="status-row"><span class="status-label"><span class="dot" id="dotCam"></span>Kamera</span><span class="status-value off" id="stCam">Tidak aktif</span></div>
+    <div class="status-row"><span class="status-label"><span class="dot" id="dotHand"></span>Tangan</span><span class="status-value off" id="stHand">Tidak terdeteksi</span></div>
+    <div class="status-row"><span class="status-label">FPS</span><span class="status-value mono" id="stFps">0</span></div>
+    <div class="status-row"><span class="status-label">Sinkron Core</span><span class="status-value mono" id="stSync">0.0%</span></div>
+  </div>
 
-<div class="hud cam-eye" id="camEye" style="display:none;">
-  <video id="videoMini" playsinline muted autoplay></video>
-  <div class="ring"></div>
-  <div class="label">LIVE FEED</div>
-</div>
+  <div class="hud cam-eye" id="camEye" style="display:none;">
+    <video id="videoMini" playsinline muted autoplay></video>
+    <div class="ring"></div>
+    <div class="label">LIVE FEED</div>
+  </div>
 
-<div class="hud panel panel-corner gesture-panel">
-  <div class="gesture-name" id="gestureName">—</div>
-  <div class="gesture-sub" id="gestureSub">Tunjukkan tangan ke kamera</div>
-  <div class="gesture-bar"><div class="gesture-bar-fill" id="gestureBar"></div></div>
-  <div class="gesture-sub" id="gestureSecond" style="margin-top:6px;"></div>
-  <div class="interact-chip" id="interactChip"><i class="fa-solid fa-circle-dot"></i><span id="interactChipText">Arsip tertutup</span></div>
-</div>
+  <div class="hud panel panel-corner gesture-panel">
+    <div class="gesture-name" id="gestureName">—</div>
+    <div class="gesture-sub" id="gestureSub">Tunjukkan tangan ke kamera</div>
+    <div class="gesture-bar"><div class="gesture-bar-fill" id="gestureBar"></div></div>
+    <div class="gesture-sub" id="gestureSecond" style="margin-top:6px;"></div>
+    <div class="interact-chip" id="interactChip"><i class="fa-solid fa-circle-dot"></i><span id="interactChipText">Arsip tertutup</span></div>
+  </div>
 
-<div class="hud panel panel-corner log-panel" id="logPanel">
-  <div class="log-title">Console</div>
-  <div id="logLines"></div>
+  <div class="hud fab-row">
+    <button class="help-fab" id="helpBtn" title="Panduan Penggunaan">
+      <i class="fa-solid fa-circle-question"></i><span>Panduan Penggunaan</span>
+    </button>
+    <button class="help-fab" id="teamBtn" title="Buka Arsip Foto">
+      <i class="fa-solid fa-images"></i><span>Buka Arsip Foto</span>
+    </button>
+  </div>
+
+  <div class="hud panel panel-corner log-panel" id="logPanel">
+    <div class="log-title">Console</div>
+    <div id="logLines"></div>
+  </div>
 </div>
 
 <div class="reticle" id="reticleA">
@@ -274,26 +328,16 @@
   </svg>
 </div>
 
-<!-- tombol panduan penggunaan & buka arsip foto -->
-<div class="hud fab-row">
-  <button class="help-fab" id="helpBtn" title="Panduan Penggunaan">
-    <i class="fa-solid fa-circle-question"></i><span>Panduan Penggunaan</span>
-  </button>
-  <button class="help-fab" id="teamBtn" title="Buka Arsip Foto">
-    <i class="fa-solid fa-images"></i><span>Buka Arsip Foto</span>
-  </button>
-</div>
-
 <!-- petunjuk kecil saat arsip sedang terbuka (foto bertebaran di ruang 3D) -->
 <div class="hud panel panel-corner" id="galleryHint">
-  <i class="fa-solid fa-hand-pointer"></i>Arahkan ke sebuah foto, cubit, lalu kepal tangan lain sekali untuk membukanya
+  <i class="fa-solid fa-hand-pointer"></i>Arahkan ke sebuah foto, cubit, lalu cubit tangan lain &amp; renggangkan untuk membukanya
 </div>
 
 <!-- caption nama/bidang saat satu foto sedang dibuka penuh di ruang 3D -->
 <div class="hud panel panel-corner" id="photoCaption">
   <div class="pc-name font-display">— <span id="pcName"></span> —</div>
   <div class="pc-role" id="pcRole"></div>
-  <div class="pc-hint"><i class="fa-solid fa-hand-fist"></i>Cubit + kepal tangan lain sekali untuk kembali</div>
+  <div class="pc-hint"><i class="fa-solid fa-hand-pinch"></i>Cubit + rapatkan tangan lain untuk kembali</div>
 </div>
 
 <!-- modal panduan gestur -->
@@ -321,26 +365,26 @@
     </div>
 
     <div class="help-item">
-      <div class="help-icon"><i class="fa-solid fa-hand-fist"></i></div>
+      <div class="help-icon"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></div>
       <div>
-        <div class="help-item-title">3. Kepal Tangan Lain Sekali — Buka</div>
-        <div class="help-item-desc">Selagi satu tangan masih mencubit (menahan target), kepalkan tangan satunya satu kali saja. Bola inti akan terbuka: mengecil ke pojok, lalu seluruh foto anggota bertebaran di ruang 3D menandakan isinya. Ulangi gestur yang sama sambil mengarah ke salah satu foto untuk membukanya penuh dan elegan di tengah layar.</div>
+        <div class="help-item-title">3. Cubit Tangan Lain &amp; Renggangkan — Buka</div>
+        <div class="help-item-desc">Selagi satu tangan masih mencubit (menahan target), cubit juga dengan tangan satunya lalu tarik kedua tangan saling menjauh (renggangkan). Begitu jaraknya cukup lebar, bola inti terbuka: mengecil ke pojok, lalu seluruh foto anggota bertebaran di ruang 3D. Ulangi gestur yang sama sambil mengarah ke salah satu foto untuk membukanya penuh dan elegan di tengah layar.</div>
       </div>
     </div>
 
     <div class="help-item">
-      <div class="help-icon"><i class="fa-solid fa-xmark"></i></div>
+      <div class="help-icon"><i class="fa-solid fa-down-left-and-up-right-to-center"></i></div>
       <div>
-        <div class="help-item-title">4. Menutup / Kembali</div>
-        <div class="help-item-desc">Gestur yang sama — cubit satu tangan, lalu kepal tangan lain sekali — juga dipakai mundur satu langkah: dari foto besar kembali ke foto bertebaran, dan dari foto bertebaran kembali ke bola inti tertutup.</div>
+        <div class="help-item-title">4. Cubit Tangan Lain &amp; Rapatkan — Tutup / Kembali</div>
+        <div class="help-item-desc">Kebalikannya: cubit dengan kedua tangan, lalu dekatkan kedua tangan (rapatkan). Ini dipakai mundur satu langkah — dari foto besar kembali ke foto bertebaran, dan dari foto bertebaran kembali ke bola inti tertutup.</div>
       </div>
     </div>
 
     <div class="help-item">
       <div class="help-icon"><i class="fa-solid fa-hands"></i></div>
       <div>
-        <div class="help-item-title">5. Cubit Dua Tangan — Resize</div>
-        <div class="help-item-desc">Saat bola inti masih tertutup, cubit dengan kedua tangan sekaligus, lalu renggangkan untuk membesarkan bola, atau dekatkan untuk mengecilkannya. Ukurannya akan tersimpan.</div>
+        <div class="help-item-title">5. Cubit Dua Tangan (Saat Tertutup) — Perbesar / Perkecil</div>
+        <div class="help-item-desc">Khusus saat bola inti masih tertutup dan tidak sedang ditahan, cubit dengan kedua tangan sekaligus lalu tahan: renggangkan untuk memperbesar bola, dekatkan untuk memperkecilnya. Gerakan diikuti secara halus dan real-time, dan ukurannya otomatis tersimpan begitu salah satu tangan dilepas.</div>
       </div>
     </div>
 
@@ -348,19 +392,12 @@
       <div class="help-icon"><i class="fa-solid fa-crosshairs"></i></div>
       <div>
         <div class="help-item-title">Reticle Jari Telunjuk</div>
-        <div class="help-item-desc">Ujung jari telunjuk tiap tangan selalu dilacak dan ditandai reticle di layar — cyan untuk tangan pertama, oranye untuk tangan kedua. Reticle berubah oranye penuh saat mencubit, dan berkedip saat mengepal.</div>
+        <div class="help-item-desc">Ujung jari telunjuk tiap tangan selalu dilacak dan ditandai reticle di layar — cyan untuk tangan pertama, oranye untuk tangan kedua. Reticle berubah oranye penuh saat mencubit, dan berkedip sesaat saat gestur renggang/rapat berhasil terdeteksi.</div>
       </div>
     </div>
+
 
     <div class="help-tip"><i class="fa-solid fa-lightbulb"></i>Pastikan pencahayaan cukup dan kedua tangan berada penuh di dalam bidang pandang kamera untuk hasil deteksi terbaik. Semua pemrosesan berjalan lokal di perangkatmu. Tombol "Buka Arsip Foto" dan klik langsung pada foto juga tersedia sebagai alternatif tanpa gestur.</div>
-
-    <div class="help-item">
-      <div class="help-icon"><i class="fa-solid fa-arrows-up-down-left-right"></i></div>
-      <div>
-        <div class="help-item-title">Tanpa Kamera — Seret Langsung</div>
-        <div class="help-item-desc">Tidak mau pakai kamera? Seret (drag) dengan mouse atau jari di layar sentuh untuk memutar bola inti dan galeri foto secara bebas di ruang 3D — persis seperti gestur tangan, arah geraknya sama. Scroll / cubit dua jari di trackpad untuk memperbesar-kecilkan tampilan.</div>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -372,7 +409,7 @@
   <button class="gate-btn" id="activateBtn"><i class="fa-solid fa-power-off"></i> Nyalakan Kamera</button>
   <div class="boot-log mono" id="bootLog"></div>
   <div class="gate-error" id="gateError"></div>
-  <div class="gate-note">Butuh izin kamera. Tunjuk dengan telunjuk untuk mengarahkan kursor, cubit untuk menahan/memilih, lalu kepalkan tangan satunya sekali saja untuk membuka arsip foto — dan sekali lagi untuk membuka salah satu foto secara penuh di ruang 3D. Tanpa kamera pun bisa: seret (drag) dengan mouse atau jari di layar untuk memutar bola inti dan galeri foto — scroll untuk memperbesar/mengecilkan.</div>
+  <div class="gate-note">Butuh izin kamera. Tunjuk dengan telunjuk untuk mengarahkan kursor, cubit untuk menahan/memilih, lalu cubit tangan satunya juga dan renggangkan kedua tangan untuk membuka arsip foto — rapatkan untuk menutupnya kembali.</div>
 </div>
 
 <!-- MediaPipe Hands (global scripts, stabil untuk static hosting) -->
@@ -424,16 +461,54 @@ const dotCam = document.getElementById('dotCam');
 const dotHand = document.getElementById('dotHand');
 
 /* ---------------------------------------------------------
+   ERROR DIAGNOSTIC OVERLAY — kalau ada apa pun yang bikin render 3D
+   gagal (exception JS, WebGL context hilang, dll), tampilkan JELAS di
+   layar dan di panel console, alih-alih diam-diam "membeku" tanpa jejak.
+---------------------------------------------------------- */
+const errBanner = document.createElement('div');
+errBanner.style.cssText = 'display:none;position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9999;max-width:640px;padding:14px 18px;background:rgba(30,6,6,0.92);border:1px solid #ff5c5c;border-radius:10px;color:#ffb3b3;font:12px/1.5 "JetBrains Mono",monospace;box-shadow:0 8px 30px rgba(0,0,0,0.5);backdrop-filter:blur(6px);';
+document.body.appendChild(errBanner);
+let lastErrKey = '';
+function reportFatalError(where, err){
+  const msg = (err && (err.stack || err.message)) ? String(err.stack || err.message) : String(err);
+  const key = where + '::' + msg.slice(0, 120);
+  if (key === lastErrKey) return; // don't spam the same error every single frame
+  lastErrKey = key;
+  console.error(`[JARVIS:${where}]`, err);
+  try { pushLog(`⚠ ERROR (${where}): ${msg.split('\n')[0].slice(0, 80)}`); } catch(_){}
+  errBanner.style.display = 'block';
+  errBanner.innerHTML = `<b style="color:#ff8080">⚠ ${where} gagal — tunjukkan pesan ini ke Claude:</b><br>${msg.slice(0, 500).replace(/</g,'&lt;')}`;
+}
+window.addEventListener('error', (e) => reportFatalError('Script', e.error || e.message));
+window.addEventListener('unhandledrejection', (e) => reportFatalError('Promise', e.reason));
+
+// kalau file ini dibuka langsung dari file:// (bukan lewat server lokal), beberapa
+// browser (terutama yang berbasis Chromium dengan shield privasi seperti Brave)
+// bisa diam-diam memblokir/mengacak pembacaan canvas & tekstur WebGL dari gambar
+// lokal tanpa melempar error — gejalanya persis: semua terlihat jalan, tapi foto
+// tidak pernah muncul. Kasih tahu di console + log panel biar jelas.
+if (location.protocol === 'file:') {
+  console.warn('[JARVIS] Halaman ini dibuka langsung via file:// — kalau foto tetap tidak muncul, jalankan lewat server lokal, misalnya: python3 -m http.server lalu buka http://localhost:8000/jarvis.html');
+  window.addEventListener('DOMContentLoaded', () => {
+    pushLog('ℹ Dibuka via file:// — jika foto blank, coba jalankan lewat server lokal');
+  });
+}
+
+/* ---------------------------------------------------------
    THREE.JS — AI CORE SCENE
 ---------------------------------------------------------- */
 const canvas = document.getElementById('three-canvas');
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  reportFatalError('WebGL', 'Context WebGL hilang (GPU/driver bermasalah atau tab kehabisan memori). Coba reload halaman.');
+});
 const scene = new THREE.Scene();
 const camera3 = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100);
 camera3.position.set(0, 0, 9);
 
-const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25)); // cap DPR — laptop tanpa GPU diskrit gampang keteteran render 3D + hand tracking bersamaan
 if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 scene.add(new THREE.AmbientLight(0x223344, 0.6));
@@ -462,6 +537,70 @@ const shellMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, wireframe: true,
 const shell = new THREE.Mesh(shellGeo, shellMat);
 coreGroup.add(shell);
 
+/* ---- Tony Stark style "arc reactor" core dressing --------------------
+   A soft additive glow (fakes bloom) plus a billboard emblem — concentric
+   rings + triangular reactor segments — that always faces camera and gives
+   the sphere a proper glowing power-source heart. ---------------------- */
+function makeRadialGlowTexture(hex){
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(128,128,0,128,128,128);
+  g.addColorStop(0, `rgba(${hex},0.95)`);
+  g.addColorStop(0.35, `rgba(${hex},0.45)`);
+  g.addColorStop(1, `rgba(${hex},0)`);
+  ctx.fillStyle = g; ctx.fillRect(0,0,256,256);
+  return new THREE.CanvasTexture(c);
+}
+const glowTex = makeRadialGlowTexture('0,229,255');
+const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowTex, color: 0x00e5ff, transparent: true, opacity: 0.75,
+  blending: THREE.AdditiveBlending, depthWrite: false
+}));
+glowSprite.scale.set(3.6, 3.6, 1);
+coreGroup.add(glowSprite);
+
+function makeReactorEmblemTexture(){
+  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const ctx = c.getContext('2d');
+  const cx = 256, cy = 256;
+  ctx.strokeStyle = 'rgba(0,229,255,0.95)';
+  ctx.lineWidth = 3;
+  // outer ring
+  ctx.beginPath(); ctx.arc(cx, cy, 220, 0, Math.PI*2); ctx.stroke();
+  // triangular segments (arc-reactor style)
+  const segs = 3;
+  for (let i = 0; i < segs; i++){
+    const a0 = (Math.PI*2/segs)*i - Math.PI/2;
+    const a1 = a0 + (Math.PI*2/segs) * 0.72;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a0)*70, cy + Math.sin(a0)*70);
+    ctx.lineTo(cx + Math.cos(a0)*196, cy + Math.sin(a0)*196);
+    ctx.arc(cx, cy, 196, a0, a1);
+    ctx.lineTo(cx + Math.cos(a1)*70, cy + Math.sin(a1)*70);
+    ctx.arc(cx, cy, 70, a1, a0, true);
+    ctx.closePath();
+    ctx.stroke();
+  }
+  // inner core ring + tick marks
+  ctx.beginPath(); ctx.arc(cx, cy, 60, 0, Math.PI*2); ctx.stroke();
+  ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,229,255,0.6)';
+  for (let i = 0; i < 48; i++){
+    const a = (Math.PI*2/48)*i;
+    const r1 = 236, r2 = i % 4 === 0 ? 250 : 244;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a)*r1, cy + Math.sin(a)*r1);
+    ctx.lineTo(cx + Math.cos(a)*r2, cy + Math.sin(a)*r2);
+    ctx.stroke();
+  }
+  return new THREE.CanvasTexture(c);
+}
+const reactorEmblem = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: makeReactorEmblemTexture(), color: 0x00e5ff, transparent: true, opacity: 0.85,
+  blending: THREE.AdditiveBlending, depthWrite: false
+}));
+reactorEmblem.scale.set(2.05, 2.05, 1);
+coreGroup.add(reactorEmblem);
+
 // orbiting rings (armillary style)
 const rings = [];
 const ringDefs = [
@@ -479,7 +618,7 @@ ringDefs.forEach(def => {
 });
 
 // particle field surrounding the core
-const pCount = 500;
+const pCount = 260; // diturunkan dari 500 — partikel latar tidak perlu sebanyak itu untuk terasa "hidup", tapi jauh lebih ringan di CPU
 const positions = new Float32Array(pCount * 3);
 const colors = new Float32Array(pCount * 3);
 const basePos = new Float32Array(pCount * 3);
@@ -564,10 +703,15 @@ function roundRectPath(ctx, x, y, w, h, r){
 function loadImg(src){
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    img.decoding = 'async';
     img.onload = () => resolve(img);
-    img.onerror = reject;
+    img.onerror = () => reject(new Error(`Gagal memuat foto: ${src} (cek nama file & folder foto_anggota persis sama, huruf besar/kecil ikut dihitung)`));
     img.src = src;
+    // jaga-jaga: kalau browser/OS tidak pernah memicu load atau error sama sekali
+    // (pernah terjadi saat dibuka langsung dari file:// tanpa server lokal), jangan
+    // biarkan kartu menunggu selamanya — anggap gagal setelah 5 detik lalu lanjut
+    // dengan kartu placeholder supaya galeri tetap tampil.
+    setTimeout(() => reject(new Error(`Timeout memuat foto: ${src}`)), 5000);
   });
 }
 function drawImageCover(ctx, img, x, y, w, h){
@@ -636,6 +780,14 @@ async function buildMemberTexture(m){
 
   const tex = new THREE.CanvasTexture(cnv);
   tex.colorSpace = THREE.SRGBColorSpace || tex.colorSpace;
+  // PENTING: canvas kartu (420x520) bukan power-of-two. Filter default three.js
+  // (mipmap trilinear) butuh dimensi power-of-two di context WebGL1 — kalau tidak,
+  // browser diam-diam menganggap teksturnya "tidak renderable" dan kartu jadi
+  // transparan/kosong tanpa error apapun. Ini penyebab paling umum foto "kebuka
+  // tapi isinya nggak ada yang keluar". Matikan mipmap, pakai linear filter biasa.
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
   tex.needsUpdate = true;
   return { tex, aspect: cw / ch };
 }
@@ -655,7 +807,7 @@ const gallerySprites = [];
 const ORBIT_RADIUS = 4.6;
 
 teamMembers.forEach((m, i) => {
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, rotation: 0 }));
   sprite.position.copy(CLOSED_POS);
   sprite.scale.set(0.0001, 0.0001, 1);
   sprite.userData = {
@@ -664,6 +816,8 @@ teamMembers.forEach((m, i) => {
     baseScale: 1.85,
     aspect: 0.807,
     phase: Math.random() * Math.PI * 2,
+    tiltPhase: Math.random() * Math.PI * 2,
+    entranceDelay: i * 0.045, // staggered "fly out" from the core — cards leave one after another, not all at once
     ready: false
   };
   scene.add(sprite);
@@ -673,7 +827,14 @@ teamMembers.forEach((m, i) => {
     sprite.material.needsUpdate = true;
     sprite.userData.aspect = aspect;
     sprite.userData.ready = true;
-  }).catch(() => { sprite.userData.ready = true; });
+  }).catch((err) => {
+    // jangan diam-diam: tampilkan di console + log panel supaya kalau ada foto yang
+    // gagal dimuat (nama file typo, folder foto_anggota tidak sejajar dengan file
+    // html ini, dst) langsung ketahuan by anggota mana yang bermasalah.
+    console.error(`[JARVIS] Foto anggota "${m.name}" (${m.file}) gagal dimuat:`, err);
+    pushLog(`⚠ Foto ${m.name} gagal dimuat — cek foto_anggota/${m.file}`);
+    sprite.userData.ready = true; // tetap tampil sebagai kartu placeholder (inisial), bukan hilang selamanya
+  });
 });
 
 window.addEventListener('resize', () => {
@@ -698,48 +859,6 @@ const handState = {
 };
 
 /* ---------------------------------------------------------
-   UNIFIED DRAG-TO-ROTATE
-   Mouse drag, touch drag, and the tracked fingertip all push
-   relative deltas into the same accumulator — so the scene can
-   always be grabbed and spun, with or without a camera.
----------------------------------------------------------- */
-let manualRotY = 0, manualRotX = 0;
-function applyDragDelta(ndx, ndy){
-  manualRotY += ndx * 2.6;
-  manualRotX = THREE.MathUtils.clamp(manualRotX - ndy * 1.7, -1.15, 1.15);
-  handState.targetRotY = manualRotY;
-  handState.targetRotX = manualRotX;
-}
-let fingerDragActive = false, fingerLastNX = 0.5, fingerLastNY = 0.5;
-
-const dragEl = renderer.domElement;
-dragEl.style.touchAction = 'none';
-dragEl.style.cursor = 'grab';
-let pDragging = false, pDragMoved = false, pLastX = 0, pLastY = 0;
-dragEl.addEventListener('pointerdown', (e) => {
-  pDragging = true; pDragMoved = false;
-  pLastX = e.clientX; pLastY = e.clientY;
-  dragEl.setPointerCapture(e.pointerId);
-  dragEl.style.cursor = 'grabbing';
-});
-dragEl.addEventListener('pointermove', (e) => {
-  if (!pDragging) return;
-  const dx = e.clientX - pLastX, dy = e.clientY - pLastY;
-  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) pDragMoved = true;
-  pLastX = e.clientX; pLastY = e.clientY;
-  applyDragDelta(dx / window.innerWidth, dy / window.innerHeight);
-});
-window.addEventListener('pointerup', () => {
-  if (!pDragging) return;
-  pDragging = false;
-  dragEl.style.cursor = 'grab';
-});
-dragEl.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  camera3.position.z = THREE.MathUtils.clamp(camera3.position.z + e.deltaY * 0.0035, 5.5, 13);
-}, { passive: false });
-
-/* ---------------------------------------------------------
    GALLERY STATE MACHINE
    closed -> (hover core + pinch)         -> held
    held   -> (other hand fist x1)         -> open   (photos scatter in 3D)
@@ -754,6 +873,8 @@ let selectedSprite = null;
 let baseCoreScale = 1;      // persists across resize gestures
 let zoomActivePrev = false;
 let zoomStartDist = 0, zoomStartScale = 1;
+let zoomDistSmooth = null;  // EMA-smoothed two-hand pinch distance, keeps resize from jittering
+let galleryOpenAt = 0;      // clock.getElapsedTime() timestamp used to stagger each card's "fly out" entrance
 const coreTargetPos = new THREE.Vector3(0, 0, 0);
 
 const interactChip = document.getElementById('interactChip');
@@ -771,6 +892,7 @@ function setInteractChip(text, hot){
 function openGallery(){
   folderState = 'open';
   selectedSprite = null;
+  galleryOpenAt = clock.getElapsedTime();
   galleryHint.classList.add('show');
   photoCaption.classList.remove('show');
   pushLog('Arsip foto dibuka — foto bertebaran di ruang 3D');
@@ -813,7 +935,6 @@ document.getElementById('teamBtn').addEventListener('click', () => {
 });
 // klik langsung pada foto (fallback tanpa gestur) — hanya aktif saat arsip terbuka
 renderer.domElement.addEventListener('click', (ev) => {
-  if (pDragMoved) return;
   if (folderState !== 'open') return;
   const ndc = new THREE.Vector2((ev.clientX / window.innerWidth) * 2 - 1, -(ev.clientY / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera3);
@@ -827,13 +948,13 @@ let frames = 0, fpsAcc = 0;
 const _tmpVec = new THREE.Vector3();
 const _tmpBob = new THREE.Vector3();
 
-// frame-rate independent exponential smoothing — makes every motion feel identically
-// silky whether the browser renders at 30fps or 144fps (unlike a fixed lerp factor,
-// which visibly stutters whenever MediaPipe's hand-tracking pass eats a frame budget)
+// frame-rate independent smoothing ("critically damped" style lerp) — keeps motion
+// buttery smooth regardless of device refresh rate / frame hitching, instead of the
+// old fixed-per-frame lerp which sped up or slowed down with fps.
 function damp(current, target, lambda, dt){
   return target + (current - target) * Math.exp(-lambda * dt);
 }
-function dampVec3(vec, target, lambda, dt){
+function dampV3(vec, target, lambda, dt){
   vec.x = damp(vec.x, target.x, lambda, dt);
   vec.y = damp(vec.y, target.y, lambda, dt);
   vec.z = damp(vec.z, target.z, lambda, dt);
@@ -842,16 +963,30 @@ function dampVec3(vec, target, lambda, dt){
 
 function animate3D() {
   requestAnimationFrame(animate3D);
+  try {
+    animate3DTick();
+  } catch (err) {
+    // Kalau ada error di tengah render, tampilkan jelas di layar alih-alih diam-diam
+    // "membeku" tanpa penjelasan — ini yang bikin susah didiagnosis sebelumnya.
+    reportFatalError('Render 3D', err);
+  }
+}
+
+function animate3DTick() {
   const t = clock.getElapsedTime();
-  const dt = clock.getDelta();
+  // NOTE: kalau render loop jarang sempat jalan (CPU sedang sibuk oleh MediaPipe di laptop pelan),
+  // dt akan besar di sini — dan itu justru BENAR: animasi harus "mengejar" sejauh waktu asli yang
+  // lewat, bukan dipaksa bergerak sedikit demi sedikit. Clamp longgar (0.4s) cuma jaga-jaga dari
+  // lonjakan ekstrem (mis. tab dibiarkan di background bermenit-menit), bukan untuk kondisi normal.
+  const dt = Math.min(clock.getDelta(), 0.4);
 
   // fps counter
   frames++; fpsAcc += dt;
   if (fpsAcc >= 0.5) { stFps.textContent = Math.round(frames / fpsAcc); frames = 0; fpsAcc = 0; }
 
-  // smooth rotation toward hand target — dt-damped, not a fixed factor, so it never stutters
-  handState.curRotX = damp(handState.curRotX, handState.targetRotX, 10, dt);
-  handState.curRotY = damp(handState.curRotY, handState.targetRotY, 10, dt);
+  // smooth rotation toward hand target — silky, frame-rate independent
+  handState.curRotX = damp(handState.curRotX, handState.targetRotX, 6, dt);
+  handState.curRotY = damp(handState.curRotY, handState.targetRotY, 6, dt);
 
   coreGroup.rotation.y = t * 0.15 + handState.curRotY;
   coreGroup.rotation.x = handState.curRotX;
@@ -878,14 +1013,24 @@ function animate3D() {
     targetScale = baseCoreScale * mult;
     coreTargetPos.copy(CLOSED_POS);
   }
-  coreGroup.scale.setScalar(damp(coreGroup.scale.x, targetScale, 9, dt));
-  dampVec3(coreGroup.position, coreTargetPos, 8, dt);
+  coreGroup.scale.setScalar(damp(coreGroup.scale.x, targetScale, 7, dt));
+  dampV3(coreGroup.position, coreTargetPos, 6, dt);
 
   const hot = folderState === 'held' || folderState === 'open' || folderState === 'photo' || (handState.gesture === 'PINCH' && folderHovered);
   innerMat.emissiveIntensity = 0.9 + Math.sin(t * 3) * 0.15 + handState.energy * 1.2 + (folderHovered && folderState==='closed' ? 0.3 : 0);
   innerMat.color.setHex(hot ? 0x1a0800 : 0x001820);
   innerMat.emissive.setHex(hot ? 0xff6b35 : 0x00e5ff);
   shellMat.color.setHex(hot ? 0xff6b35 : (folderHovered && folderState === 'closed' ? 0xffffff : 0x00e5ff));
+
+  // arc-reactor emblem + glow: gentle heartbeat pulse, tints orange when "hot"/engaged
+  const reactorColor = hot ? 0xff6b35 : 0x00e5ff;
+  glowSprite.material.color.setHex(reactorColor);
+  reactorEmblem.material.color.setHex(reactorColor);
+  const pulse = 1 + Math.sin(t * 2.2) * 0.06 + handState.energy * 0.1;
+  glowSprite.scale.setScalar(damp(glowSprite.scale.x, 3.6 * pulse * (hot ? 1.15 : 1), 8, dt));
+  glowSprite.material.opacity = damp(glowSprite.material.opacity, 0.55 + handState.energy * 0.4 + (hot ? 0.2 : 0), 6, dt);
+  reactorEmblem.material.rotation += dt * (hot ? 0.9 : 0.35);
+  reactorEmblem.material.opacity = damp(reactorEmblem.material.opacity, 0.7 + Math.sin(t * 2.2) * 0.15, 6, dt);
 
   // particles: expand on OPEN, contract on FIST, drift otherwise
   const posAttr = pGeo.attributes.position;
@@ -906,31 +1051,40 @@ function animate3D() {
   // camera drifts slightly with hand x/y for parallax depth
   const px = (handState.x - 0.5) * 2;
   const py = (handState.y - 0.5) * -2;
-  camera3.position.x = damp(camera3.position.x, px * 1.6, 5, dt);
-  camera3.position.y = damp(camera3.position.y, py * 1.2, 5, dt);
+  camera3.position.x = damp(camera3.position.x, px * 1.6, 2.5, dt);
+  camera3.position.y = damp(camera3.position.y, py * 1.2, 2.5, dt);
   camera3.lookAt(0, 0, 0);
 
   // energy decay toward baseline, HUD sync readout
-  handState.energy = damp(handState.energy, handState.present ? 0.55 : 0.12, 6, dt);
+  handState.energy = damp(handState.energy, handState.present ? 0.55 : 0.12, 3, dt);
   stSync.textContent = (handState.energy * 100).toFixed(1) + '%';
 
   // ---- 3D photo gallery: true orbital motion — unselected photos always
   // rotate together with the core (real 3D, not a flat billboard grid) ----
   const coreQ = coreGroup.quaternion;
+  const timeSinceOpen = t - galleryOpenAt;
   gallerySprites.forEach(sp => {
     const ud = sp.userData;
     const isSelected = selectedSprite === sp;
     const bob = Math.sin(t * 0.7 + ud.phase) * 0.15;
+    // staggered "fly out": each card waits its own entranceDelay before it's allowed to leave the core,
+    // so the gallery unfurls card-by-card instead of every photo popping out at once
+    const entered = folderState === 'closed' || folderState === 'held' || timeSinceOpen >= ud.entranceDelay;
 
     let pos, scaleY, opacity;
     if (folderState === 'closed' || folderState === 'held') {
       pos = CLOSED_POS; scaleY = 0.0001; opacity = 0;
     } else if (folderState === 'open') {
-      pos = _tmpVec.copy(ud.orbitBase).applyQuaternion(coreQ);
-      pos.y += bob;
-      const highlighted = hoveredSprite === sp;
-      scaleY = ud.baseScale * (highlighted ? 1.16 : 1);
-      opacity = ud.ready ? 1 : 0;
+      if (entered) {
+        pos = _tmpVec.copy(ud.orbitBase).applyQuaternion(coreQ);
+        pos.y += bob;
+        const highlighted = hoveredSprite === sp;
+        scaleY = ud.baseScale * (highlighted ? 1.18 : 1);
+        opacity = ud.ready ? 1 : 0;
+      } else {
+        // still "inside" the core, waiting its turn — tiny and invisible
+        pos = CLOSED_POS; scaleY = 0.0001; opacity = 0;
+      }
     } else { // photo — the chosen one holds still in front of camera; the rest keep orbiting behind it
       if (isSelected) {
         pos = _tmpVec.set(0, 0.12, 4.6);
@@ -944,11 +1098,18 @@ function animate3D() {
       }
     }
 
-    dampVec3(sp.position, pos, isSelected ? 11 : 7, dt);
+    // slightly slower (softer) damping = more of a silky glide than a snap into place
+    dampV3(sp.position, pos, isSelected ? 7.5 : 5.2, dt);
     const curScaleY = sp.scale.y || 0.0001;
-    const newScaleY = damp(curScaleY, scaleY, 9, dt);
+    const newScaleY = damp(curScaleY, scaleY, isSelected ? 6.5 : 5.5, dt);
     sp.scale.set(newScaleY * ud.aspect, newScaleY, 1);
-    sp.material.opacity = damp(sp.material.opacity, opacity, 9, dt);
+    sp.material.opacity = damp(sp.material.opacity, opacity, 6, dt);
+    // gentle continuous tilt while orbiting — adds real depth/parallax instead of a flat billboard feel
+    if (folderState === 'open' && !isSelected) {
+      sp.material.rotation = Math.sin(t * 0.5 + ud.tiltPhase) * 0.07;
+    } else {
+      sp.material.rotation = damp(sp.material.rotation || 0, 0, 6, dt);
+    }
   });
 
   renderer.render(scene, camera3);
@@ -963,6 +1124,30 @@ const videoMini = document.getElementById('videoMini');
 const skeletonCanvas = document.getElementById('skeleton');
 const skeletonCtx = skeletonCanvas.getContext('2d');
 const reticles = [document.getElementById('reticleA'), document.getElementById('reticleB')];
+// exponential-moving-average smoothing for raw landmark screen coords — MediaPipe
+// output is naturally a bit jittery frame-to-frame; this keeps the reticles/cursor gliding
+const reticleSmooth = [{ x:null, y:null }, { x:null, y:null }];
+const pinchSmooth = [{ x:null, y:null }, { x:null, y:null }];
+// dt antar-panggilan onResults() dilacak sendiri (MediaPipe bukan bagian dari render
+// loop three.js), supaya smoothing di bawah ini konsisten halus walau fps kamera
+// naik-turun (laptop lambat vs cepat) — bukan "lebih lambat = lebih kasar" seperti EMA biasa.
+let lastHandTs = performance.now();
+function handDt(){
+  const now = performance.now();
+  const dt = Math.min((now - lastHandTs) / 1000, 0.12);
+  lastHandTs = now;
+  return dt;
+}
+// lambda lebih besar = mengejar lebih cepat (kurang lag), lebih kecil = lebih halus/melayang.
+// Reticle (jari telunjuk) butuh sedikit lebih responsif; titik cubit sedikit lebih diredam
+// supaya drag terasa "berat & presisi" alih-alih gemetar.
+const RETICLE_LAMBDA = 26;
+const PINCH_LAMBDA = 18;
+function emaPoint(store, x, y, lambda = RETICLE_LAMBDA, dt = handDt()){
+  if (store.x === null){ store.x = x; store.y = y; }
+  else { store.x = damp(store.x, x, lambda, dt); store.y = damp(store.y, y, lambda, dt); }
+  return store;
+}
 const gestureName = document.getElementById('gestureName');
 const gestureSub = document.getElementById('gestureSub');
 const gestureBar = document.getElementById('gestureBar');
@@ -984,8 +1169,6 @@ const FINGER_LINKS = [
   [13,17],[17,18],[18,19],[19,20],
   [0,17]
 ];
-// thumb, index, middle, ring, pinky tips — every finger gets tracked & highlighted, not just the index
-const FINGERTIPS = [4, 8, 12, 16, 20];
 
 function dist3(a, b){
   return Math.hypot(a.x-b.x, a.y-b.y, (a.z||0)-(b.z||0));
@@ -1023,13 +1206,13 @@ const gestureLabels = {
   PINCH:   { name: 'PINCH',   sub: 'Cubit — menahan target' },
 };
 
-// per-hand identity tracking (keyed by MediaPipe handedness label) for the "kepal 2x" (double fist clench) detector
+// per-hand identity tracking (keyed by MediaPipe handedness label) — used for the ambient fist scale-pulse
 const handTrack = {}; // { Left: {wasFist}, Right: {...} }
 function getTrack(label){
   if (!handTrack[label]) handTrack[label] = { wasFist: false };
   return handTrack[label];
 }
-// "kepal satu kali saja" — fires once on the rising edge into a fist (open hand -> fist)
+// "kepal satu kali saja" — fires once on the rising edge into a fist (kept for the ambient scale-pulse effect)
 function updateClench(label, isFist){
   const tr = getTrack(label);
   const clenchedOnce = isFist && !tr.wasFist;
@@ -1037,9 +1220,89 @@ function updateClench(label, isFist){
   return clenchedOnce;
 }
 
+/* ---------------------------------------------------------
+   "CUBIT + RENGGANGKAN / RAPATKAN" — the two-hand stretch gesture
+   that drives open/close now. One hand holds a pinch on the target
+   (core or a photo); the moment the OTHER hand also pinches, we start
+   measuring the distance between the two pinch points. Spreading that
+   distance out past a threshold fires OPEN (go one level deeper);
+   squeezing it in past a threshold fires CLOSE (go one level back).
+   Resets the instant either hand releases its pinch, so every open/close
+   is a single deliberate stretch-or-squeeze motion.
+---------------------------------------------------------- */
+const stretchTrack = { active: false, startDist: 0, distSmooth: null, fired: null };
+const STRETCH_OPEN_RATIO  = 1.4;   // spread ~40% further apart than the starting pinch distance -> OPEN
+const SHRINK_CLOSE_RATIO  = 0.65;  // squeeze to ~65% of the starting pinch distance -> CLOSE
+function updateStretchGesture(primary, other, dt = handDt()){
+  const bothPinching = !!(primary && primary.gesture === 'PINCH' && other && other.gesture === 'PINCH');
+  if (!bothPinching){
+    stretchTrack.active = false;
+    stretchTrack.distSmooth = null;
+    stretchTrack.fired = null;
+    return null;
+  }
+  const dRaw = Math.hypot(primary.pinchScreenX - other.pinchScreenX, primary.pinchScreenY - other.pinchScreenY);
+  stretchTrack.distSmooth = stretchTrack.distSmooth === null ? dRaw : damp(stretchTrack.distSmooth, dRaw, 14, dt);
+  if (!stretchTrack.active){
+    stretchTrack.active = true;
+    stretchTrack.startDist = stretchTrack.distSmooth;
+    stretchTrack.fired = null;
+    return null;
+  }
+  if (stretchTrack.fired) return null; // one trigger per hold — release both hands to re-arm
+  const ratio = stretchTrack.distSmooth / Math.max(stretchTrack.startDist, 1);
+  if (ratio >= STRETCH_OPEN_RATIO){ stretchTrack.fired = 'OPEN'; return 'OPEN'; }
+  if (ratio <= SHRINK_CLOSE_RATIO){ stretchTrack.fired = 'CLOSE'; return 'CLOSE'; }
+  return null;
+}
+function flashReticles(kind){
+  reticles.forEach(r => r.classList.add('clenching'));
+  playHudTone(kind || 'confirm');
+}
+
+/* ---------------------------------------------------------
+   SYNTHESIZED HUD BEEPS (Web Audio API — tidak perlu file audio eksternal)
+   Nada pendek ala JARVIS untuk umpan balik gestur: naik = buka/konfirmasi,
+   turun = tutup/mundur.
+---------------------------------------------------------- */
+let audioCtx = null;
+function playHudTone(kind){
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.type = 'sine';
+    if (kind === 'confirm'){
+      osc.frequency.setValueAtTime(560, now);
+      osc.frequency.exponentialRampToValueAtTime(1180, now + 0.14);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.09, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+      osc.start(now); osc.stop(now + 0.24);
+    } else if (kind === 'close'){
+      osc.frequency.setValueAtTime(680, now);
+      osc.frequency.exponentialRampToValueAtTime(320, now + 0.16);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+      osc.start(now); osc.stop(now + 0.26);
+    } else { // 'tick' — subtle hover/select tick
+      osc.frequency.setValueAtTime(920, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.045, now + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+      osc.start(now); osc.stop(now + 0.08);
+    }
+  } catch(_) { /* audio unsupported/blocked — fail silently, purely cosmetic */ }
+}
+
 let lastGesture = 'NONE';
 
 function onResults(results){
+  const handFrameDt = handDt(); // sekali per frame, dipakai semua smoothing tangan di bawah
   skeletonCtx.clearRect(0, 0, skeletonCanvas.width, skeletonCanvas.height);
 
   const handsLm = results.multiHandLandmarks || [];
@@ -1058,9 +1321,10 @@ function onResults(results){
     handState.twoHandActive = false;
     handState.zoomMode = false;
     folderHovered = false;
-    fingerDragActive = false;
     if (folderState === 'held') folderState = 'closed';
     if (lastGesture !== 'NONE'){ pushLog('Tangan hilang dari bidang pandang'); lastGesture = 'NONE'; }
+    reticleSmooth[0].x = reticleSmooth[0].y = reticleSmooth[1].x = reticleSmooth[1].y = null;
+    pinchSmooth[0].x = pinchSmooth[0].y = pinchSmooth[1].x = pinchSmooth[1].y = null;
     gestureName.textContent = gestureLabels.NONE.name;
     gestureSub.textContent = gestureLabels.NONE.sub;
     gestureBar.style.width = '0%';
@@ -1082,12 +1346,11 @@ function onResults(results){
       skeletonCtx.stroke();
     });
     lm.forEach((p, i) => {
-      const isTip = FINGERTIPS.includes(i);
       skeletonCtx.beginPath();
-      skeletonCtx.arc(p.x*w, p.y*h, i===8 ? 5 : (isTip ? 4 : 3), 0, Math.PI*2);
+      skeletonCtx.arc(p.x*w, p.y*h, i===8 ? 5 : 3, 0, Math.PI*2);
       skeletonCtx.fillStyle = idx === 0
-        ? (i===8 ? '#ff6b35' : (isTip ? 'rgba(0,229,255,0.95)' : 'rgba(0,229,255,0.85)'))
-        : (i===8 ? '#00e5ff' : (isTip ? 'rgba(255,107,53,0.95)' : 'rgba(255,107,53,0.85)'));
+        ? (i===8 ? '#ff6b35' : 'rgba(0,229,255,0.85)')
+        : (i===8 ? '#00e5ff' : 'rgba(255,107,53,0.85)');
       skeletonCtx.fill();
     });
 
@@ -1095,10 +1358,15 @@ function onResults(results){
     // so we position the DOM reticle using the *unflipped* screen-space x)
     const tip = lm[8];
     const thumbTip = lm[4];
-    const screenX = (1 - tip.x) * window.innerWidth;
-    const screenY = tip.y * window.innerHeight;
-    const pinchScreenX = (1 - (tip.x + thumbTip.x)/2) * window.innerWidth;
-    const pinchScreenY = ((tip.y + thumbTip.y)/2) * window.innerHeight;
+    const rawScreenX = (1 - tip.x) * window.innerWidth;
+    const rawScreenY = tip.y * window.innerHeight;
+    const rawPinchX = (1 - (tip.x + thumbTip.x)/2) * window.innerWidth;
+    const rawPinchY = ((tip.y + thumbTip.y)/2) * window.innerHeight;
+    const smTip = emaPoint(reticleSmooth[idx], rawScreenX, rawScreenY, RETICLE_LAMBDA, handFrameDt);
+    const screenX = smTip.x, screenY = smTip.y;
+    // pinch midpoint pakai lambda lebih rendah — drag jadi terasa "berat" & presisi, bukan gemetar
+    const smPinch = emaPoint(pinchSmooth[idx], rawPinchX, rawPinchY, PINCH_LAMBDA, handFrameDt);
+    const pinchScreenX = smPinch.x, pinchScreenY = smPinch.y;
 
     const { gesture, amount } = classifyGesture(lm);
     const label = (handedness[idx] && handedness[idx].label) || (idx === 0 ? 'Left' : 'Right');
@@ -1117,14 +1385,8 @@ function onResults(results){
     if (idx === 0){
       handState.x = 1 - tip.x;
       handState.y = tip.y;
-      // finger acts as a drag input too — same relative-motion channel as the mouse,
-      // so grabbing the scene feels identical whether you use your hand or a cursor
-      if (fingerDragActive){
-        applyDragDelta(handState.x - fingerLastNX, handState.y - fingerLastNY);
-      }
-      fingerLastNX = handState.x;
-      fingerLastNY = handState.y;
-      fingerDragActive = true;
+      handState.targetRotY = (handState.x - 0.5) * 2.2;
+      handState.targetRotX = (handState.y - 0.5) * -1.4;
     }
   });
 
@@ -1134,14 +1396,18 @@ function onResults(results){
 
   /* ---------- resize (two-hand pinch, relative drag) — only while the core is closed & idle ---------- */
   if (handState.zoomMode){
-    const d = Math.hypot(pinchHands[0].pinchScreenX - pinchHands[1].pinchScreenX, pinchHands[0].pinchScreenY - pinchHands[1].pinchScreenY);
-    if (!zoomActivePrev){ zoomStartDist = d; zoomStartScale = baseCoreScale; zoomActivePrev = true; pushLog('Resize inti aktif'); }
+    const dRaw = Math.hypot(pinchHands[0].pinchScreenX - pinchHands[1].pinchScreenX, pinchHands[0].pinchScreenY - pinchHands[1].pinchScreenY);
+    // smooth the inter-hand distance itself so small tracking jitter doesn't make the core "breathe"
+    zoomDistSmooth = zoomDistSmooth === null ? dRaw : damp(zoomDistSmooth, dRaw, 12, handFrameDt);
+    if (!zoomActivePrev){ zoomStartDist = zoomDistSmooth; zoomStartScale = baseCoreScale; zoomActivePrev = true; pushLog('Perbesar/perkecil inti aktif'); }
     else {
-      const ratio = d / Math.max(zoomStartDist, 1);
+      const ratio = zoomDistSmooth / Math.max(zoomStartDist, 1);
       baseCoreScale = THREE.MathUtils.clamp(zoomStartScale * ratio, 0.45, 2.4);
     }
   } else {
+    if (zoomActivePrev) pushLog('Perbesar/perkecil selesai — ukuran tersimpan');
     zoomActivePrev = false;
+    zoomDistSmooth = null;
   }
 
   /* ---------- primary interaction hand: prefer the pinching hand, else a pointing hand ---------- */
@@ -1167,12 +1433,12 @@ function onResults(results){
     }
   }
 
-  /* ---------- gallery state machine — "cubit + kepal tangan lain sekali" ---------- */
+  /* ---------- gallery state machine — "cubit tahan, lalu cubit tangan lain + renggangkan (buka) / rapatkan (tutup)" ---------- */
   if (folderState === 'closed'){
     if (primary && primary.gesture === 'PINCH' && folderHovered){
       folderState = 'held';
       pushLog('Inti ditahan');
-      setInteractChip('Ditahan — kepal tangan lain sekali', true);
+      setInteractChip('Ditahan — cubit tangan lain lalu renggangkan', true);
     } else {
       setInteractChip(folderHovered ? 'Arahkan & cubit untuk menahan' : 'Arsip tertutup', false);
     }
@@ -1180,22 +1446,28 @@ function onResults(results){
     if (!(primary && primary.gesture === 'PINCH')){
       folderState = 'closed';
       setInteractChip('Arsip tertutup', false);
-    } else if (other && other.clenchedOnce){
-      openGallery();
     } else {
-      setInteractChip('Ditahan — kepal tangan lain sekali untuk buka', true);
+      const trig = updateStretchGesture(primary, other, handFrameDt);
+      if (trig === 'OPEN'){ flashReticles('confirm'); openGallery(); }
+      else setInteractChip(other && other.gesture === 'PINCH' ? 'Renggangkan tangan untuk membuka' : 'Ditahan — cubit tangan lain lalu renggangkan', true);
     }
   } else if (folderState === 'open'){
-    if (primary && primary.gesture === 'PINCH' && other && other.clenchedOnce){
-      if (hoveredSprite) openPhoto(hoveredSprite); else closeGallery();
+    if (primary && primary.gesture === 'PINCH'){
+      const trig = updateStretchGesture(primary, other, handFrameDt);
+      if (trig === 'OPEN' && hoveredSprite){ flashReticles('confirm'); openPhoto(hoveredSprite); }
+      else if (trig === 'CLOSE'){ flashReticles('close'); closeGallery(); }
+      else setInteractChip(hoveredSprite ? `Cubit tangan lain + renggangkan untuk buka ${hoveredSprite.userData.member.name}` : 'Arsip terbuka — cubit + rapatkan tangan lain untuk tutup', true);
     } else {
-      setInteractChip(hoveredSprite ? `Cubit + kepal untuk buka ${hoveredSprite.userData.member.name}` : 'Arsip terbuka — arahkan ke foto', true);
+      stretchTrack.active = false; stretchTrack.distSmooth = null; stretchTrack.fired = null;
+      setInteractChip(hoveredSprite ? `Arahkan & cubit ${hoveredSprite.userData.member.name}` : 'Arsip terbuka — arahkan ke foto', true);
     }
   } else if (folderState === 'photo'){
-    if (primary && primary.gesture === 'PINCH' && other && other.clenchedOnce){
-      closePhoto();
+    if (primary && primary.gesture === 'PINCH'){
+      const trig = updateStretchGesture(primary, other, handFrameDt);
+      if (trig === 'CLOSE'){ flashReticles('close'); closePhoto(); }
+      else setInteractChip(`Menampilkan ${selectedSprite ? selectedSprite.userData.member.name : 'foto'} — cubit + rapatkan tangan lain untuk kembali`, true);
     } else {
-      setInteractChip(`Menampilkan ${selectedSprite ? selectedSprite.userData.member.name : 'foto'} — cubit + kepal untuk kembali`, true);
+      stretchTrack.active = false; stretchTrack.distSmooth = null; stretchTrack.fired = null;
     }
   }
 
@@ -1205,10 +1477,10 @@ function onResults(results){
 
   let displayName, displaySub, barAmount, logKey;
   if (handState.zoomMode){
-    displayName = 'RESIZE';
-    displaySub = 'Renggangkan / dekatkan untuk mengubah ukuran';
+    displayName = 'PERBESAR/PERKECIL';
+    displaySub = 'Renggangkan untuk membesar, dekatkan untuk mengecil';
     barAmount = THREE.MathUtils.clamp(baseCoreScale / 2.4, 0, 1);
-    logKey = 'RESIZE';
+    logKey = 'ZOOM';
     gestureSecond.textContent = '';
   } else if (handState.twoHandActive){
     const label0 = gestureLabels[perHand[0].gesture] || gestureLabels.NEUTRAL;
@@ -1248,7 +1520,9 @@ async function startExperience(){
 
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 960 }, height: { ideal: 720 }, facingMode: 'user' },
+      // resolusi kamera diturunkan (dulu 960x720) — mengecilkan input MediaPipe adalah
+      // pengungkit performa terbesar di laptop tanpa GPU diskrit; gestur tetap terbaca akurat
+      video: { width: { ideal: 480 }, height: { ideal: 360 }, facingMode: 'user' },
       audio: false
     });
     video.srcObject = cameraStream;
@@ -1268,7 +1542,7 @@ async function startExperience(){
     });
     handsInstance.setOptions({
       maxNumHands: 2,
-      modelComplexity: 1,
+      modelComplexity: 0,          // model "lite" — jauh lebih ringan di CPU daripada complexity 1, cocok untuk laptop tanpa GPU diskrit
       minDetectionConfidence: 0.6,
       minTrackingConfidence: 0.55
     });
@@ -1276,13 +1550,19 @@ async function startExperience(){
 
     pushLog('Core online. Selamat datang.');
 
-    const loop = async () => {
-      if (video.readyState >= 2) {
+    // proses hand-tracking itu paling mahal di CPU — dibatasi berbasis WAKTU (bukan hitungan
+    // frame) supaya konsisten di refresh rate berapa pun: target ~18 kali/detik, cukup responsif
+    // untuk gestur tapi membebaskan banyak waktu CPU untuk render Three.js yang mulus
+    const HAND_TRACK_INTERVAL_MS = 100; // ~10x/detik — cukup untuk gestur, memberi lebih banyak ruang bagi render 3D di CPU yang lemah
+    let lastHandTrackAt = 0;
+    const loop = async (now) => {
+      if (video.readyState >= 2 && (now - lastHandTrackAt) >= HAND_TRACK_INTERVAL_MS) {
+        lastHandTrackAt = now;
         await handsInstance.send({ image: video });
       }
       requestAnimationFrame(loop);
     };
-    loop();
+    requestAnimationFrame(loop);
 
     document.getElementById('gate').classList.add('hidden');
     clearInterval(bootTimer);
